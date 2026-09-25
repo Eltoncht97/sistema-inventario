@@ -83,3 +83,11 @@ npm test
 npm run test:e2e
 npm run build
 ```
+
+## Dominio
+
+Las reglas, invariantes, casos de uso y límites iniciales están documentados en
+[`docs/domain.md`](docs/domain.md).
+
+Las variables `POSTGRES_*` y los valores incluidos en `DATABASE_URL` deben
+mantenerse sincronizados.
