@@ -77,6 +77,7 @@ defina el dominio del proyecto.
 ## Comandos de calidad
 
 ```bash
+docker compose up -d
 npm run lint
 npm test
 npm run test:e2e
