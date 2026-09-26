@@ -25,6 +25,19 @@ describe('HealthController (e2e)', () => {
       });
   });
 
+  it('rejects unknown properties globally', async () => {
+    await request(app.getHttpServer())
+      .post('/products')
+      .send({
+        sku: 'SKU-001',
+        name: 'Producto',
+        price: '10.50',
+        currency: 'PEN',
+        unexpected: true,
+      })
+      .expect(400);
+  });
+
   afterEach(async () => {
     await app.close();
   });
