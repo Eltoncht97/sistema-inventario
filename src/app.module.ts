@@ -25,6 +25,6 @@ import { ProductsModule } from './products/products.module.js';
           forbidNonWhitelisted: true,
         }),
     },
-  ]
+  ],
 })
 export class AppModule {}

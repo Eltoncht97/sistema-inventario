@@ -3,7 +3,8 @@ import {
   BadRequestException,
   ValidationPipe,
 } from '@nestjs/common';
-import { CreateProductDto, Currency } from './create-product.dto.js';
+import { CreateProductDto } from './create-product.dto.js';
+import { Currency } from '../../generated/prisma/enums.js';
 
 describe('CreateProductDto', () => {
   const validationPipe = new ValidationPipe({
