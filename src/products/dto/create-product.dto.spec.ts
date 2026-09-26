@@ -3,6 +3,8 @@ import {
   BadRequestException,
   ValidationPipe,
 } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validateOrReject } from 'class-validator';
 import { Currency } from '../../generated/prisma/enums.js';
 import { CreateProductDto } from './create-product.dto.js';
 
@@ -29,6 +31,17 @@ describe('CreateProductDto', () => {
   it('accepts a valid product without description', async () => {
     await expect(validate(validProduct)).resolves.toMatchObject(validProduct);
   });
+
+  it.each(['sku', 'name', 'price', 'currency'] as const)(
+    'rejects a product without the required field %s',
+    async (field) => {
+      const product: Partial<typeof validProduct> = { ...validProduct };
+      delete product[field];
+      const dto = plainToInstance(CreateProductDto, product);
+
+      await expect(validateOrReject(dto)).rejects.toBeDefined();
+    },
+  );
 
   it.each([Currency.PEN, Currency.USD])(
     'accepts %s as a valid currency',
