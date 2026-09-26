@@ -1,44 +1,77 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { AppModule } from './../src/app.module.js';
+import { AppModule } from '../src/app.module.js';
 
-describe('HealthController (e2e)', () => {
+describe('Application (e2e)', () => {
   let app: INestApplication<App>;
+  let httpServer: App;
 
-  beforeEach(async () => {
+  const validProduct = {
+    sku: 'SKU-001',
+    name: 'Producto de prueba',
+    price: '10.50',
+    currency: 'PEN',
+  };
+
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    await app.init();
+    await app.listen(0, '127.0.0.1');
+    httpServer = app.getHttpServer() as App;
   });
 
-  it('/health (GET)', () => {
-    return request(app.getHttpServer())
+  it('GET /health responds with the application status', () => {
+    return request(httpServer)
       .get('/health')
       .expect(200)
-      .expect(({ body }) => {
-        expect(body).toEqual({ status: 'ok' });
-      });
+      .expect({ status: 'ok' });
   });
 
-  it('rejects unknown properties globally', async () => {
-    await request(app.getHttpServer())
+  it('POST /products accepts a valid body', () => {
+    return request(httpServer).post('/products').send(validProduct).expect(201);
+  });
+
+  it('POST /products rejects an unknown property', () => {
+    return request(httpServer)
       .post('/products')
-      .send({
-        sku: 'SKU-001',
-        name: 'Producto',
-        price: '10.50',
-        currency: 'PEN',
-        unexpected: true,
-      })
+      .send({ ...validProduct, unknown: 'value' })
       .expect(400);
   });
 
-  afterEach(async () => {
+  it('POST /products rejects a non-string name with 400', () => {
+    return request(httpServer)
+      .post('/products')
+      .send({ ...validProduct, name: 123 })
+      .expect(400);
+  });
+
+  it('POST /products rejects an invalid currency', () => {
+    return request(httpServer)
+      .post('/products')
+      .send({ ...validProduct, currency: 'EUR' })
+      .expect(400);
+  });
+
+  it('POST /products rejects a negative price', () => {
+    return request(httpServer)
+      .post('/products')
+      .send({ ...validProduct, price: '-1.00' })
+      .expect(400);
+  });
+
+  it('POST /products rejects a price with more than two decimals', () => {
+    return request(httpServer)
+      .post('/products')
+      .send({ ...validProduct, price: '10.123' })
+      .expect(400);
+  });
+
+  afterAll(async () => {
     await app.close();
   });
 });
