@@ -56,13 +56,6 @@ describe('Application (e2e)', () => {
     expect(response.body.inventoryBalance.productId).toBe(response.body.id);
   });
 
-  it('POST /products accepts a valid body', () => {
-    return request(httpServer)
-      .post('/products')
-      .send(buildValidProduct())
-      .expect(201);
-  });
-
   it('POST /products rejects an unknown property', () => {
     return request(httpServer)
       .post('/products')
