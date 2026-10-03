@@ -22,7 +22,7 @@ describe('Application (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    await app.listen(0);
+    await app.init();
     httpServer = app.getHttpServer() as App;
   });
 
