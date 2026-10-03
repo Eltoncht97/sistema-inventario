@@ -71,9 +71,6 @@ npm run prisma:migrate -- --name nombre_de_la_migracion
 npm run prisma:studio
 ```
 
-Todavía no hay modelos ni migraciones: están listos para agregarse cuando se
-defina el dominio del proyecto.
-
 ## Comandos de calidad
 
 ```bash
@@ -83,6 +80,26 @@ npm test
 npm run test:e2e
 npm run build
 ```
+
+## Tests e2e
+
+Los tests e2e utilizan una base PostgreSQL desechable e independiente de
+desarrollo: `inventory_e2e` en el puerto `5433`. Para ejecutarlos localmente:
+
+```bash
+cp .env.e2e.example .env.e2e
+npm run test:e2e
+npm run db:e2e:down
+```
+
+`npm run test:e2e` inicia exclusivamente `postgres-e2e`, espera su healthcheck,
+aplica las migraciones existentes mediante `prisma migrate deploy` y ejecuta
+Vitest con el entorno e2e cargado antes de importar la aplicación.
+
+Antes de cada test se eliminan primero los balances y luego los productos. El
+helper de limpieza se niega a ejecutar eliminaciones salvo que `NODE_ENV` sea
+exactamente `test` y que `DATABASE_URL` apunte exactamente a la base
+`inventory_e2e`, evitando limpiar accidentalmente la base de desarrollo.
 
 ## Dominio
 

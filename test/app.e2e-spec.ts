@@ -4,13 +4,16 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module.js';
 import { randomUUID } from 'node:crypto';
+import { PrismaService } from '../src/prisma/prisma.service.js';
+import { cleanE2EDatabase } from './helpers/e2e-database.js';
 
 describe('Application (e2e)', () => {
   let app: INestApplication<App>;
   let httpServer: App;
+  let prisma: PrismaService;
 
   const buildValidProduct = () => ({
-    sku: `TEST-${randomUUID()}`,
+    sku: 'TEST-PRODUCT-001',
     name: 'Producto de prueba',
     price: '10.50',
     currency: 'PEN',
@@ -22,8 +25,13 @@ describe('Application (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    await app.init();
+    await app.listen(0, '127.0.0.1');
     httpServer = app.getHttpServer() as App;
+    prisma = app.get(PrismaService);
+  });
+
+  beforeEach(async () => {
+    await cleanE2EDatabase(prisma);
   });
 
   it('GET /health responds with the application status', () => {

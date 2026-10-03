@@ -14,6 +14,10 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
+    "e2e:env:check": "node scripts/require-e2e-env.mjs",
+    "db:e2e:up": "npm run e2e:env:check && dotenv --override -e .env.e2e -- docker compose --env-file .env.e2e --profile e2e up -d --wait postgres-e2e",
+    "db:e2e:migrate": "npm run e2e:env:check && dotenv --override -e .env.e2e -- prisma migrate deploy",
+    "db:e2e:down": "npm run e2e:env:check && dotenv --override -e .env.e2e -- docker compose --env-file .env.e2e --profile e2e rm -sf postgres-e2e",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -23,7 +27,8 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
-    "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
+    "test:e2e:run": "npm run e2e:env:check && dotenv --override -e .env.e2e -- vitest run --config ./vitest.config.e2e.ts",
+    "test:e2e": "npm run db:e2e:up && npm run db:e2e:migrate && npm run test:e2e:run"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -50,6 +55,7 @@
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.2",
+    "dotenv-cli": "^11.0.0",
     "oxlint": "^1.58.0",
     "oxlint-tsgolint": "^7.0.2001",
     "prettier": "^3.4.2",

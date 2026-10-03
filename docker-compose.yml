@@ -17,5 +17,23 @@ services:
       retries: 5
       start_period: 10s
 
+  postgres-e2e:
+    image: postgres:17-alpine
+    profiles: ['e2e']
+    environment:
+      POSTGRES_USER: ${E2E_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${E2E_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${E2E_POSTGRES_DB}
+    ports:
+      - '${E2E_POSTGRES_PORT:-5433}:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   postgres_data:
