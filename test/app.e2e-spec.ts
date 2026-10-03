@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module.js';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { cleanE2EDatabase } from './helpers/e2e-database.js';
+import { MAX_INVENTORY_QUANTITY } from '../src/inventory/inventory.constants.js';
 
 describe('Application (e2e)', () => {
   let app: INestApplication<App>;
@@ -394,6 +395,36 @@ describe('Application (e2e)', () => {
       .expect(({ body }) => expect(body.quantity).toBe(10));
   });
 
+  it('rejects a movement quantity above the supported maximum', async () => {
+    const created = await createProduct();
+
+    await postMovement(created.body.id, {
+      type: 'ENTRY',
+      quantity: MAX_INVENTORY_QUANTITY + 1,
+      idempotencyKey: randomUUID(),
+    }).expect(400);
+  });
+
+  it('rejects an entry that would overflow the inventory balance', async () => {
+    const created = await createProduct();
+    await postMovement(created.body.id, {
+      type: 'ENTRY',
+      quantity: MAX_INVENTORY_QUANTITY,
+      idempotencyKey: randomUUID(),
+    }).expect(201);
+
+    await postMovement(created.body.id, {
+      type: 'ENTRY',
+      quantity: 1,
+      idempotencyKey: randomUUID(),
+    }).expect(409);
+
+    const balance = await request(httpServer)
+      .get(`/products/${created.body.id}/inventory`)
+      .expect(200);
+    expect(balance.body.quantity).toBe(MAX_INVENTORY_QUANTITY);
+  });
+
   it('registers an exit and rejects insufficient stock', async () => {
     const created = await createProduct();
     await postMovement(created.body.id, {
@@ -628,9 +659,9 @@ describe('Application (e2e)', () => {
         idempotencyKey: randomUUID(),
       }),
     ]);
-    expect([first.status, second.status].sort((left, right) => left - right)).toEqual(
-      [201, 409],
-    );
+    expect(
+      [first.status, second.status].sort((left, right) => left - right),
+    ).toEqual([201, 409]);
 
     const balance = await request(httpServer)
       .get(`/products/${created.body.id}/inventory`)
@@ -639,17 +670,70 @@ describe('Application (e2e)', () => {
 
     const movements = await prisma.inventoryMovement.findMany({
       where: { productId: created.body.id },
-      orderBy: { createdAt: 'asc' },
     });
     expect(movements).toHaveLength(2);
-    expect(movements[0]).toMatchObject({
+    const entry = movements.find((movement) => movement.type === 'ENTRY');
+    const exit = movements.find((movement) => movement.type === 'EXIT');
+    expect(entry).toMatchObject({
       quantityBefore: 0,
       quantityAfter: 5,
     });
-    expect(movements[1]).toMatchObject({
+    expect(exit).toMatchObject({
       quantityBefore: 5,
       quantityAfter: 1,
     });
+  });
+
+  it('serializes concurrent deactivation and inventory entry', async () => {
+    const created = await createProduct();
+
+    const [deactivation, entryResponse] = await Promise.all([
+      request(httpServer)
+        .patch(`/products/${created.body.id}`)
+        .send({ status: 'INACTIVE' }),
+      postMovement(created.body.id, {
+        type: 'ENTRY',
+        quantity: 1,
+        idempotencyKey: randomUUID(),
+      }),
+    ]);
+
+    const statuses = [deactivation.status, entryResponse.status];
+    expect(statuses.filter((status) => status === 409)).toHaveLength(1);
+    expect(
+      statuses.filter((status) => status === 200 || status === 201),
+    ).toHaveLength(1);
+
+    const product = await prisma.product.findUniqueOrThrow({
+      where: { id: created.body.id },
+      select: {
+        status: true,
+        inventoryBalance: { select: { quantity: true } },
+        inventoryMovements: {
+          select: {
+            type: true,
+            quantityBefore: true,
+            quantityAfter: true,
+          },
+        },
+      },
+    });
+    expect(product.inventoryBalance).not.toBeNull();
+
+    if (product.status === 'INACTIVE') {
+      expect(product.inventoryBalance?.quantity).toBe(0);
+      expect(product.inventoryMovements).toHaveLength(0);
+    } else {
+      expect(product.status).toBe('ACTIVE');
+      expect(product.inventoryBalance?.quantity).toBe(1);
+      expect(product.inventoryMovements).toEqual([
+        {
+          type: 'ENTRY',
+          quantityBefore: 0,
+          quantityAfter: 1,
+        },
+      ]);
+    }
   });
 
   it('inventory endpoints validate product UUIDs', async () => {

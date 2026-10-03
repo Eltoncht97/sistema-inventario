@@ -21,6 +21,7 @@ import {
   toInventoryBalanceResponse,
   toInventoryMovementResponse,
 } from './inventory.mapper.js';
+import { MAX_INVENTORY_QUANTITY } from './inventory.constants.js';
 import {
   inventoryBalanceSelect,
   inventoryMovementSelect,
@@ -228,6 +229,7 @@ export class InventoryService {
     if (
       !Number.isInteger(request.quantity) ||
       request.quantity < 0 ||
+      request.quantity > MAX_INVENTORY_QUANTITY ||
       (request.type !== InventoryMovementType.ADJUSTMENT &&
         request.quantity === 0)
     ) {
@@ -250,6 +252,12 @@ export class InventoryService {
     quantityBefore: number,
   ): MovementCalculation {
     if (type === InventoryMovementType.ENTRY) {
+      if (quantityBefore > MAX_INVENTORY_QUANTITY - quantity) {
+        throw new ConflictException(
+          'El balance de inventario excede la cantidad máxima permitida',
+        );
+      }
+
       return { delta: quantity, quantityAfter: quantityBefore + quantity };
     }
 

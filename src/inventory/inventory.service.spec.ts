@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   InternalServerErrorException,
   NotFoundException,
@@ -13,6 +14,7 @@ import {
 } from '../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { InventoryService } from './inventory.service.js';
+import { MAX_INVENTORY_QUANTITY } from './inventory.constants.js';
 import {
   inventoryBalanceSelect,
   inventoryMovementSelect,
@@ -240,6 +242,37 @@ describe('InventoryService', () => {
     ).rejects.toMatchObject({
       constructor: ConflictException,
       message: 'Stock insuficiente',
+    });
+    expect(balanceUpdate).not.toHaveBeenCalled();
+    expect(movementCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a direct quantity above the supported maximum', async () => {
+    await expect(
+      service.createMovement(productId, {
+        type: InventoryMovementType.ENTRY,
+        quantity: MAX_INVENTORY_QUANTITY + 1,
+        idempotencyKey,
+      }),
+    ).rejects.toMatchObject({
+      constructor: BadRequestException,
+      message: 'Cantidad de movimiento inválida',
+    });
+    expect(prismaTransaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects an entry that would overflow the inventory balance', async () => {
+    productFindUnique.mockResolvedValue(activeProduct(MAX_INVENTORY_QUANTITY));
+
+    await expect(
+      service.createMovement(productId, {
+        type: InventoryMovementType.ENTRY,
+        quantity: 1,
+        idempotencyKey,
+      }),
+    ).rejects.toMatchObject({
+      constructor: ConflictException,
+      message: 'El balance de inventario excede la cantidad máxima permitida',
     });
     expect(balanceUpdate).not.toHaveBeenCalled();
     expect(movementCreate).not.toHaveBeenCalled();

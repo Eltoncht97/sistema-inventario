@@ -22,7 +22,7 @@ La primera versión incluye:
 - Registro de entradas de stock.
 - Registro de salidas de stock.
 - Ajustes por conteo físico.
-- Corrección de movimientos mediante movimientos compensatorios.
+- Corrección mediante un nuevo movimiento o ajuste, sin modificar el historial.
 - Consulta del historial de movimientos de un producto.
 
 El sistema opera inicialmente con un único comercio y un único depósito.
@@ -188,28 +188,18 @@ reintentan de forma acotada; si no pueden resolverse, la operación falla sin
 dejar cambios parciales. Esto evita stock negativo incluso ante salidas
 concurrentes.
 
-Los movimientos son inmutables. Los errores se corrigen creando movimientos
-compensatorios, nunca editando ni eliminando el historial existente.
+Los movimientos son inmutables. En el alcance actual, los errores se corrigen
+registrando un nuevo movimiento o un ajuste, nunca editando ni eliminando el
+historial existente.
 
-## Movimiento compensatorio
+## Correcciones en el alcance actual
 
-Un movimiento compensatorio corrige el efecto de un movimiento anterior sin
-alterarlo ni eliminarlo.
+Una corrección se representa mediante una nueva operación que deja visible el
+movimiento original. Cuando corresponde establecer el conteo físico real, se
+utiliza un ajuste con una razón explícita.
 
-Ejemplo:
-
-- Se registró por error una entrada de 10 unidades.
-- La corrección crea un movimiento compensatorio de -10.
-- Ambos movimientos permanecen visibles en el historial.
-
-### Reglas de compensación
-
-- El movimiento original permanece inmutable.
-- La compensación debe referenciar el movimiento original.
-- El motivo de la corrección es obligatorio.
-- No se puede compensar dos veces el mismo movimiento.
-- La compensación debe respetar la regla que impide stock negativo.
-- La corrección y la actualización del balance deben ser atómicas.
+La compensación formal, con una referencia persistida al movimiento original y
+protección contra compensaciones duplicadas, todavía no está implementada.
 
 ## Reglas e invariantes
 
@@ -226,9 +216,8 @@ Las siguientes condiciones deben cumplirse siempre:
 9. Cada cambio de stock produce un movimiento.
 10. El balance y el movimiento se guardan en una única transacción.
 11. Los movimientos son inmutables.
-12. Las correcciones se realizan mediante movimientos compensatorios.
-13. Un movimiento sólo puede compensarse una vez.
-14. El balance registrado debe poder verificarse mediante el historial.
+12. Las correcciones crean una nueva operación y preservan el historial.
+13. El balance registrado debe poder verificarse mediante el historial.
 
 ## Casos de uso iniciales
 
@@ -248,7 +237,7 @@ Las siguientes condiciones deben cumplirse siempre:
 - Registrar una entrada.
 - Registrar una salida.
 - Registrar un ajuste por conteo físico.
-- Compensar un movimiento incorrecto.
+- Corregir una diferencia mediante un nuevo movimiento o ajuste.
 - Consultar el historial de movimientos.
 
 ## Errores de dominio esperados
@@ -263,8 +252,6 @@ El sistema debe rechazar explícitamente:
 - Un movimiento sobre un producto inactivo.
 - La desactivación de un producto con stock disponible.
 - La modificación o eliminación de un movimiento.
-- La compensación repetida de un mismo movimiento.
-- Una compensación que produciría stock negativo.
 - Una moneda distinta de PEN o USD.
 
 ## Fuera de alcance
@@ -286,6 +273,8 @@ La primera versión no incluye:
 - Colas o workers.
 - Microservicios.
 - Despliegue en AWS.
+- Compensaciones formales con referencia al movimiento original y control de
+  compensación única.
 
 Estas capacidades podrán incorporarse en sprints posteriores cuando exista un
 requisito concreto que las justifique.

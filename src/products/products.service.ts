@@ -4,6 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -15,9 +16,15 @@ import {
   toProductDetailResponse,
   toProductListItemResponse,
 } from './products.mapper.js';
-import { productDetailSelect, productListSelect } from './products.select.js';
+import {
+  productDetailSelect,
+  productListSelect,
+  type ProductDetailRecord,
+} from './products.select.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
 import { ProductStatus } from '../generated/prisma/enums.js';
+
+const MAX_SERIALIZABLE_ATTEMPTS = 3;
 
 @Injectable()
 export class ProductsService {
@@ -124,55 +131,91 @@ export class ProductsService {
       );
     }
 
-    const product = await this.prisma.$transaction(async (transaction) => {
-      const existingProduct = await transaction.product.findUnique({
-        where: { id },
-        select: {
-          id: true,
-          status: true,
-          inventoryBalance: {
-            select: {
-              quantity: true,
-            },
-          },
-        },
-      });
-
-      if (!existingProduct) {
-        throw new NotFoundException('Producto no encontrado');
-      }
-
-      if (!existingProduct.inventoryBalance) {
-        throw new InternalServerErrorException(
-          'El producto no tiene un balance de inventario',
-        );
-      }
-
-      if (
-        status === ProductStatus.INACTIVE &&
-        existingProduct.status !== ProductStatus.INACTIVE &&
-        existingProduct.inventoryBalance.quantity > 0
-      ) {
-        throw new ConflictException(
-          'No se puede desactivar un producto con stock disponible',
-        );
-      }
-
-      const data: Prisma.ProductUpdateInput = {
-        ...(name !== undefined ? { name } : {}),
-        ...(description !== undefined ? { description } : {}),
-        ...(price !== undefined ? { price } : {}),
-        ...(currency !== undefined ? { currency } : {}),
-        ...(status !== undefined ? { status } : {}),
-      };
-
-      return transaction.product.update({
-        where: { id },
-        data,
-        select: productDetailSelect,
-      });
-    });
+    const data: Prisma.ProductUpdateInput = {
+      ...(name !== undefined ? { name } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(price !== undefined ? { price } : {}),
+      ...(currency !== undefined ? { currency } : {}),
+      ...(status !== undefined ? { status } : {}),
+    };
+    const product = await this.updateInSerializableTransaction(
+      id,
+      status,
+      data,
+    );
 
     return toProductDetailResponse(product);
+  }
+
+  private async updateInSerializableTransaction(
+    id: string,
+    requestedStatus: ProductStatus | undefined,
+    data: Prisma.ProductUpdateInput,
+  ): Promise<ProductDetailRecord> {
+    for (let attempt = 1; attempt <= MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(
+          async (transaction) => {
+            const existingProduct = await transaction.product.findUnique({
+              where: { id },
+              select: {
+                id: true,
+                status: true,
+                inventoryBalance: {
+                  select: {
+                    quantity: true,
+                  },
+                },
+              },
+            });
+
+            if (!existingProduct) {
+              throw new NotFoundException('Producto no encontrado');
+            }
+
+            if (!existingProduct.inventoryBalance) {
+              throw new InternalServerErrorException(
+                'El producto no tiene un balance de inventario',
+              );
+            }
+
+            if (
+              requestedStatus === ProductStatus.INACTIVE &&
+              existingProduct.status !== ProductStatus.INACTIVE &&
+              existingProduct.inventoryBalance.quantity > 0
+            ) {
+              throw new ConflictException(
+                'No se puede desactivar un producto con stock disponible',
+              );
+            }
+
+            return transaction.product.update({
+              where: { id },
+              data,
+              select: productDetailSelect,
+            });
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034'
+        ) {
+          if (attempt === MAX_SERIALIZABLE_ATTEMPTS) {
+            throw new ServiceUnavailableException(
+              'No se pudo actualizar el producto por concurrencia',
+            );
+          }
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new ServiceUnavailableException(
+      'No se pudo actualizar el producto por concurrencia',
+    );
   }
 }

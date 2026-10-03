@@ -3,6 +3,7 @@ import {
   ConflictException,
   InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '../generated/prisma/client.js';
@@ -278,6 +279,9 @@ describe('ProductsService', () => {
         select: productDetailSelect,
       });
       expect(prismaTransaction).toHaveBeenCalledOnce();
+      expect(prismaTransaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
     });
 
     it('passes description null to Prisma', async () => {
@@ -307,6 +311,7 @@ describe('ProductsService', () => {
         message: 'Producto no encontrado',
       });
       expect(prismaUpdate).not.toHaveBeenCalled();
+      expect(prismaTransaction).toHaveBeenCalledOnce();
     });
 
     it('rejects an update when the product has no inventory balance', async () => {
@@ -382,6 +387,42 @@ describe('ProductsService', () => {
         constructor: ConflictException,
         message: 'No se puede desactivar un producto con stock disponible',
       });
+      expect(prismaUpdate).not.toHaveBeenCalled();
+      expect(prismaTransaction).toHaveBeenCalledOnce();
+    });
+
+    it('retries a serializable conflict and succeeds on a later attempt', async () => {
+      const conflict = new Prisma.PrismaClientKnownRequestError(
+        'Transaction conflict',
+        { code: 'P2034', clientVersion: '7.10.0' },
+      );
+      prismaTransaction.mockRejectedValueOnce(conflict);
+      prismaFindUnique.mockResolvedValue(existingProduct);
+      prismaUpdate.mockResolvedValue({
+        ...detailRecord,
+        status: ProductStatus.INACTIVE,
+      });
+
+      await expect(
+        service.update(detailRecord.id, { status: ProductStatus.INACTIVE }),
+      ).resolves.toMatchObject({ status: ProductStatus.INACTIVE });
+      expect(prismaTransaction).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns 503 after three serializable conflicts', async () => {
+      const conflict = new Prisma.PrismaClientKnownRequestError(
+        'Transaction conflict',
+        { code: 'P2034', clientVersion: '7.10.0' },
+      );
+      prismaTransaction.mockRejectedValue(conflict);
+
+      await expect(
+        service.update(detailRecord.id, { status: ProductStatus.INACTIVE }),
+      ).rejects.toMatchObject({
+        constructor: ServiceUnavailableException,
+        message: 'No se pudo actualizar el producto por concurrencia',
+      });
+      expect(prismaTransaction).toHaveBeenCalledTimes(3);
       expect(prismaUpdate).not.toHaveBeenCalled();
     });
   });

@@ -1,0 +1,1 @@
+export const MAX_INVENTORY_QUANTITY = 2_147_483_647;

@@ -5,6 +5,7 @@ import {
   IsInt,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   Validate,
@@ -14,6 +15,7 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator';
 import { InventoryMovementType } from '../../generated/prisma/enums.js';
+import { MAX_INVENTORY_QUANTITY } from '../inventory.constants.js';
 
 @ValidatorConstraint({ name: 'validInventoryMovementQuantity' })
 class ValidInventoryMovementQuantityConstraint implements ValidatorConstraintInterface {
@@ -69,6 +71,7 @@ export class CreateInventoryMovementDto {
   @IsDefined()
   @IsInt()
   @Min(0)
+  @Max(MAX_INVENTORY_QUANTITY)
   @Validate(ValidInventoryMovementQuantityConstraint)
   quantity!: number;
 

@@ -6,6 +6,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { InventoryMovementType } from '../../generated/prisma/enums.js';
 import { CreateInventoryMovementDto } from './create-inventory-movement.dto.js';
+import { MAX_INVENTORY_QUANTITY } from '../inventory.constants.js';
 
 describe('CreateInventoryMovementDto', () => {
   const validationPipe = new ValidationPipe({
@@ -54,6 +55,15 @@ describe('CreateInventoryMovementDto', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     },
   );
+
+  it('rejects a quantity above the PostgreSQL INTEGER maximum', async () => {
+    await expect(
+      validate({
+        ...validMovement,
+        quantity: MAX_INVENTORY_QUANTITY + 1,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
 
   it.each([InventoryMovementType.ENTRY, InventoryMovementType.EXIT])(
     'rejects zero for %s',
