@@ -105,6 +105,84 @@ describe('Application (e2e)', () => {
       });
   });
 
+  it('GET /products/:id returns an existing product with its balance', async () => {
+    const product = buildValidProduct();
+    const created = await request(httpServer)
+      .post('/products')
+      .send(product)
+      .expect(201);
+
+    const response = await request(httpServer)
+      .get(`/products/${created.body.id}`)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      id: created.body.id,
+      sku: product.sku.toUpperCase(),
+      name: product.name,
+      price: String(Number(product.price)),
+      currency: product.currency,
+      status: 'ACTIVE',
+      inventoryBalance: {
+        id: expect.any(String),
+        productId: created.body.id,
+        quantity: 0,
+      },
+    });
+  });
+
+  it('GET /products/:id returns 404 for an unknown UUID', () => {
+    return request(httpServer).get(`/products/${randomUUID()}`).expect(404);
+  });
+
+  it('GET /products/:id returns 400 when the id is not a UUID', () => {
+    return request(httpServer).get('/products/not-a-uuid').expect(400);
+  });
+
+  it('GET /products returns filtered products and pagination metadata', async () => {
+    const product = buildValidProduct();
+    const created = await request(httpServer)
+      .post('/products')
+      .send(product)
+      .expect(201);
+
+    const response = await request(httpServer)
+      .get('/products')
+      .query({
+        page: 1,
+        limit: 20,
+        search: product.sku.toLowerCase(),
+        status: 'ACTIVE',
+        currency: 'PEN',
+      })
+      .expect(200);
+
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0]).toEqual({
+      id: created.body.id,
+      sku: product.sku.toUpperCase(),
+      name: product.name,
+      price: String(Number(product.price)),
+      currency: product.currency,
+      status: 'ACTIVE',
+      inventoryBalance: {
+        id: expect.any(String),
+        productId: created.body.id,
+        quantity: 0,
+      },
+    });
+    expect(response.body.meta).toEqual({
+      page: 1,
+      limit: 20,
+      total: 1,
+      totalPages: 1,
+    });
+  });
+
+  it('GET /products rejects a limit greater than 100', () => {
+    return request(httpServer).get('/products?limit=101').expect(400);
+  });
+
   afterAll(async () => {
     await app.close();
   });
