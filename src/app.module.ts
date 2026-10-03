@@ -4,6 +4,7 @@ import { APP_PIPE } from '@nestjs/core';
 import { environmentValidationSchema } from './config/environment.validation.js';
 import { HealthModule } from './health/health.module.js';
 import { ProductsModule } from './products/products.module.js';
+import { InventoryModule } from './inventory/inventory.module.js';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ProductsModule } from './products/products.module.js';
     }),
     HealthModule,
     ProductsModule,
+    InventoryModule,
   ],
   providers: [
     {

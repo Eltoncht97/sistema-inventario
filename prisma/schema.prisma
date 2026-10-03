@@ -17,6 +17,12 @@ enum ProductStatus {
   INACTIVE
 }
 
+enum InventoryMovementType {
+  ENTRY
+  EXIT
+  ADJUSTMENT
+}
+
 model Product {
   id          String        @id @default(uuid()) @db.Uuid
   sku         String        @unique @db.VarChar(64)
@@ -29,8 +35,27 @@ model Product {
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
   inventoryBalance InventoryBalance?
+  inventoryMovements InventoryMovement[]
 
   @@map("products")
+}
+
+model InventoryMovement {
+  id             String                @id @default(uuid()) @db.Uuid
+  productId      String                @map("product_id") @db.Uuid
+  type           InventoryMovementType
+  quantity       Int
+  delta          Int
+  quantityBefore Int                   @map("quantity_before")
+  quantityAfter  Int                   @map("quantity_after")
+  reason         String?               @db.VarChar(500)
+  idempotencyKey String                @unique @map("idempotency_key") @db.Uuid
+  createdAt      DateTime              @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([productId, createdAt])
+  @@map("inventory_movements")
 }
 
 model InventoryBalance {

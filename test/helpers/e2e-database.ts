@@ -4,6 +4,9 @@ export interface E2EDatabaseEnvironment {
 }
 
 export interface E2EDatabaseCleaner {
+  inventoryMovement: {
+    deleteMany(): Promise<unknown>;
+  };
   inventoryBalance: {
     deleteMany(): Promise<unknown>;
   };
@@ -46,6 +49,7 @@ export const cleanE2EDatabase = async (
 ): Promise<void> => {
   validateE2EDatabaseEnvironment(environment);
 
+  await prisma.inventoryMovement.deleteMany();
   await prisma.inventoryBalance.deleteMany();
   await prisma.product.deleteMany();
 };

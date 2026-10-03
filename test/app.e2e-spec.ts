@@ -19,6 +19,22 @@ describe('Application (e2e)', () => {
     currency: 'PEN',
   });
 
+  const createProduct = async () =>
+    request(httpServer).post('/products').send(buildValidProduct()).expect(201);
+
+  const postMovement = (
+    productId: string,
+    body: {
+      type: 'ENTRY' | 'EXIT' | 'ADJUSTMENT';
+      quantity: number;
+      reason?: string;
+      idempotencyKey: string;
+    },
+  ) =>
+    request(httpServer)
+      .post(`/products/${productId}/inventory/movements`)
+      .send(body);
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -330,6 +346,331 @@ describe('Application (e2e)', () => {
           'No se puede desactivar un producto con stock disponible',
         );
       });
+  });
+
+  it('GET /products/:productId/inventory returns the initial zero balance', async () => {
+    const created = await createProduct();
+
+    const response = await request(httpServer)
+      .get(`/products/${created.body.id}/inventory`)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      productId: created.body.id,
+      sku: created.body.sku,
+      name: created.body.name,
+      status: 'ACTIVE',
+      quantity: 0,
+      updatedAt: expect.any(String),
+    });
+  });
+
+  it('registers an entry and exposes the resulting balance', async () => {
+    const created = await createProduct();
+    const idempotencyKey = randomUUID();
+
+    const movement = await postMovement(created.body.id, {
+      type: 'ENTRY',
+      quantity: 10,
+      reason: '  Compra al proveedor  ',
+      idempotencyKey,
+    }).expect(201);
+
+    expect(movement.body).toEqual({
+      id: expect.any(String),
+      productId: created.body.id,
+      type: 'ENTRY',
+      quantity: 10,
+      delta: 10,
+      quantityBefore: 0,
+      quantityAfter: 10,
+      reason: 'Compra al proveedor',
+      idempotencyKey,
+      createdAt: expect.any(String),
+    });
+    await request(httpServer)
+      .get(`/products/${created.body.id}/inventory`)
+      .expect(200)
+      .expect(({ body }) => expect(body.quantity).toBe(10));
+  });
+
+  it('registers an exit and rejects insufficient stock', async () => {
+    const created = await createProduct();
+    await postMovement(created.body.id, {
+      type: 'ENTRY',
+      quantity: 8,
+      idempotencyKey: randomUUID(),
+    }).expect(201);
+
+    const exit = await postMovement(created.body.id, {
+      type: 'EXIT',
+      quantity: 3,
+      idempotencyKey: randomUUID(),
+    }).expect(201);
+    expect(exit.body).toMatchObject({
+      delta: -3,
+      quantityBefore: 8,
+      quantityAfter: 5,
+    });
+
+    await postMovement(created.body.id, {
+      type: 'EXIT',
+      quantity: 6,
+      idempotencyKey: randomUUID(),
+    })
+      .expect(409)
+      .expect(({ body }) => expect(body.message).toBe('Stock insuficiente'));
+  });
+
+  it.each([
+    [10, 15, 5],
+    [10, 4, -6],
+    [10, 0, -10],
+    [10, 10, 0],
+  ])(
+    'adjusts inventory from %i to %i with delta %i',
+    async (quantityBefore, quantityAfter, delta) => {
+      const created = await createProduct();
+      await postMovement(created.body.id, {
+        type: 'ENTRY',
+        quantity: quantityBefore,
+        idempotencyKey: randomUUID(),
+      }).expect(201);
+
+      const adjustment = await postMovement(created.body.id, {
+        type: 'ADJUSTMENT',
+        quantity: quantityAfter,
+        reason: 'Conteo físico',
+        idempotencyKey: randomUUID(),
+      }).expect(201);
+
+      expect(adjustment.body).toMatchObject({
+        type: 'ADJUSTMENT',
+        quantity: quantityAfter,
+        delta,
+        quantityBefore,
+        quantityAfter,
+        reason: 'Conteo físico',
+      });
+    },
+  );
+
+  it('rejects an adjustment without a reason', async () => {
+    const created = await createProduct();
+
+    await postMovement(created.body.id, {
+      type: 'ADJUSTMENT',
+      quantity: 0,
+      idempotencyKey: randomUUID(),
+    }).expect(400);
+  });
+
+  it('rejects movements for an inactive product', async () => {
+    const created = await createProduct();
+    await request(httpServer)
+      .patch(`/products/${created.body.id}`)
+      .send({ status: 'INACTIVE' })
+      .expect(200);
+
+    await postMovement(created.body.id, {
+      type: 'ENTRY',
+      quantity: 1,
+      idempotencyKey: randomUUID(),
+    })
+      .expect(409)
+      .expect(({ body }) =>
+        expect(body.message).toBe(
+          'No se pueden registrar movimientos para un producto inactivo',
+        ),
+      );
+  });
+
+  it('returns ordered movement history and filters by type', async () => {
+    const created = await createProduct();
+    await postMovement(created.body.id, {
+      type: 'ENTRY',
+      quantity: 5,
+      idempotencyKey: randomUUID(),
+    }).expect(201);
+    await postMovement(created.body.id, {
+      type: 'EXIT',
+      quantity: 2,
+      idempotencyKey: randomUUID(),
+    }).expect(201);
+
+    const history = await request(httpServer)
+      .get(`/products/${created.body.id}/inventory/movements`)
+      .expect(200);
+    expect(history.body.data).toHaveLength(2);
+    expect(history.body.meta).toEqual({
+      page: 1,
+      limit: 20,
+      total: 2,
+      totalPages: 1,
+    });
+    expect(
+      new Date(history.body.data[0].createdAt).getTime(),
+    ).toBeGreaterThanOrEqual(
+      new Date(history.body.data[1].createdAt).getTime(),
+    );
+
+    const filtered = await request(httpServer)
+      .get(`/products/${created.body.id}/inventory/movements`)
+      .query({ type: 'EXIT' })
+      .expect(200);
+    expect(filtered.body.data).toHaveLength(1);
+    expect(filtered.body.data[0].type).toBe('EXIT');
+  });
+
+  it('paginates movement history', async () => {
+    const created = await createProduct();
+    for (let index = 0; index < 3; index += 1) {
+      await postMovement(created.body.id, {
+        type: 'ENTRY',
+        quantity: 1,
+        idempotencyKey: randomUUID(),
+      }).expect(201);
+    }
+
+    const response = await request(httpServer)
+      .get(`/products/${created.body.id}/inventory/movements`)
+      .query({ page: 2, limit: 2 })
+      .expect(200);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.meta).toEqual({
+      page: 2,
+      limit: 2,
+      total: 3,
+      totalPages: 2,
+    });
+  });
+
+  it('returns the same movement for an identical idempotent request', async () => {
+    const created = await createProduct();
+    const movement = {
+      type: 'ENTRY' as const,
+      quantity: 5,
+      reason: 'Compra',
+      idempotencyKey: randomUUID(),
+    };
+
+    const first = await postMovement(created.body.id, movement).expect(201);
+    const repeated = await postMovement(created.body.id, movement).expect(201);
+
+    expect(repeated.body.id).toBe(first.body.id);
+    await request(httpServer)
+      .get(`/products/${created.body.id}/inventory`)
+      .expect(200)
+      .expect(({ body }) => expect(body.quantity).toBe(5));
+  });
+
+  it('rejects an idempotency key reused with different data', async () => {
+    const created = await createProduct();
+    const idempotencyKey = randomUUID();
+    await postMovement(created.body.id, {
+      type: 'ENTRY',
+      quantity: 5,
+      idempotencyKey,
+    }).expect(201);
+
+    await postMovement(created.body.id, {
+      type: 'ENTRY',
+      quantity: 6,
+      idempotencyKey,
+    })
+      .expect(409)
+      .expect(({ body }) =>
+        expect(body.message).toBe(
+          'La clave de idempotencia ya fue utilizada con otra operación',
+        ),
+      );
+  });
+
+  it('handles concurrent requests with the same idempotency key once', async () => {
+    const created = await createProduct();
+    const movement = {
+      type: 'ENTRY' as const,
+      quantity: 5,
+      idempotencyKey: randomUUID(),
+    };
+
+    const [first, second] = await Promise.all([
+      postMovement(created.body.id, movement),
+      postMovement(created.body.id, movement),
+    ]);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(first.body.id).toBe(second.body.id);
+
+    const balance = await request(httpServer)
+      .get(`/products/${created.body.id}/inventory`)
+      .expect(200);
+    expect(balance.body.quantity).toBe(5);
+  });
+
+  it('prevents negative stock under concurrent exits', async () => {
+    const created = await createProduct();
+    await postMovement(created.body.id, {
+      type: 'ENTRY',
+      quantity: 5,
+      idempotencyKey: randomUUID(),
+    }).expect(201);
+
+    const [first, second] = await Promise.all([
+      postMovement(created.body.id, {
+        type: 'EXIT',
+        quantity: 4,
+        idempotencyKey: randomUUID(),
+      }),
+      postMovement(created.body.id, {
+        type: 'EXIT',
+        quantity: 4,
+        idempotencyKey: randomUUID(),
+      }),
+    ]);
+    expect([first.status, second.status].sort((left, right) => left - right)).toEqual(
+      [201, 409],
+    );
+
+    const balance = await request(httpServer)
+      .get(`/products/${created.body.id}/inventory`)
+      .expect(200);
+    expect(balance.body.quantity).toBe(1);
+
+    const movements = await prisma.inventoryMovement.findMany({
+      where: { productId: created.body.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(movements).toHaveLength(2);
+    expect(movements[0]).toMatchObject({
+      quantityBefore: 0,
+      quantityAfter: 5,
+    });
+    expect(movements[1]).toMatchObject({
+      quantityBefore: 5,
+      quantityAfter: 1,
+    });
+  });
+
+  it('inventory endpoints validate product UUIDs', async () => {
+    await request(httpServer).get('/products/not-a-uuid/inventory').expect(400);
+    await postMovement('not-a-uuid', {
+      type: 'ENTRY',
+      quantity: 1,
+      idempotencyKey: randomUUID(),
+    }).expect(400);
+  });
+
+  it('inventory endpoints return 404 for an unknown product', async () => {
+    const productId = randomUUID();
+    await request(httpServer)
+      .get(`/products/${productId}/inventory`)
+      .expect(404);
+    await postMovement(productId, {
+      type: 'ENTRY',
+      quantity: 1,
+      idempotencyKey: randomUUID(),
+    }).expect(404);
   });
 
   afterAll(async () => {

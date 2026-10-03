@@ -89,12 +89,13 @@ Cada movimiento contiene conceptualmente:
 - Un identificador.
 - El producto afectado.
 - El tipo de movimiento.
-- La variación aplicada al stock.
+- La cantidad solicitada por el cliente.
+- La variación firmada aplicada al stock (`delta`).
 - El balance anterior.
 - El balance resultante.
 - Un motivo o descripción.
 - La fecha y hora de creación.
-- Una referencia al movimiento original cuando sea compensatorio.
+- Una clave de idempotencia única.
 
 Los movimientos no se editan ni se eliminan.
 
@@ -161,7 +162,34 @@ Ejemplo:
 - El sistema calcula la diferencia entre el balance actual y la cantidad
   encontrada.
 - El motivo del ajuste es obligatorio.
-- Un ajuste que no cambia la cantidad no debe generar un movimiento.
+- Un ajuste que no cambia la cantidad genera igualmente un movimiento auditable
+  con `delta = 0`.
+
+## Semántica de cantidades
+
+- En una entrada, `quantity` es la cantidad sumada y `delta` tiene el mismo
+  valor positivo.
+- En una salida, `quantity` es la cantidad restada y `delta` es su valor
+  negativo.
+- En un ajuste, `quantity` es el conteo físico absoluto que pasa a ser el nuevo
+  balance y `delta` es la diferencia respecto del balance anterior.
+- `quantityBefore + delta` siempre debe ser igual a `quantityAfter`.
+
+## Idempotencia y concurrencia
+
+Cada solicitud de movimiento incluye una clave de idempotencia UUID. Repetir la
+misma clave con el mismo producto, tipo, cantidad y razón normalizada devuelve
+el movimiento original sin volver a modificar el balance. Reutilizarla con una
+operación diferente es un conflicto.
+
+El registro del movimiento y la actualización del balance se realizan en una
+transacción con aislamiento serializable. Los conflictos serializables se
+reintentan de forma acotada; si no pueden resolverse, la operación falla sin
+dejar cambios parciales. Esto evita stock negativo incluso ante salidas
+concurrentes.
+
+Los movimientos son inmutables. Los errores se corrigen creando movimientos
+compensatorios, nunca editando ni eliminando el historial existente.
 
 ## Movimiento compensatorio
 

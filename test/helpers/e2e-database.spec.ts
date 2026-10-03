@@ -43,9 +43,11 @@ describe('e2e database safety', () => {
   );
 
   it('validates safety before deleting and cleans in relation order', async () => {
+    const inventoryMovementDeleteMany = vi.fn().mockResolvedValue({ count: 0 });
     const inventoryBalanceDeleteMany = vi.fn().mockResolvedValue({ count: 0 });
     const productDeleteMany = vi.fn().mockResolvedValue({ count: 0 });
     const prisma: E2EDatabaseCleaner = {
+      inventoryMovement: { deleteMany: inventoryMovementDeleteMany },
       inventoryBalance: { deleteMany: inventoryBalanceDeleteMany },
       product: { deleteMany: productDeleteMany },
     };
@@ -56,13 +58,18 @@ describe('e2e database safety', () => {
         DATABASE_URL: safeEnvironment.DATABASE_URL,
       }),
     ).rejects.toThrow('NODE_ENV=test');
+    expect(inventoryMovementDeleteMany).not.toHaveBeenCalled();
     expect(inventoryBalanceDeleteMany).not.toHaveBeenCalled();
     expect(productDeleteMany).not.toHaveBeenCalled();
 
     await cleanE2EDatabase(prisma, safeEnvironment);
 
+    expect(inventoryMovementDeleteMany).toHaveBeenCalledOnce();
     expect(inventoryBalanceDeleteMany).toHaveBeenCalledOnce();
     expect(productDeleteMany).toHaveBeenCalledOnce();
+    expect(
+      inventoryMovementDeleteMany.mock.invocationCallOrder[0],
+    ).toBeLessThan(inventoryBalanceDeleteMany.mock.invocationCallOrder[0]);
     expect(inventoryBalanceDeleteMany.mock.invocationCallOrder[0]).toBeLessThan(
       productDeleteMany.mock.invocationCallOrder[0],
     );
