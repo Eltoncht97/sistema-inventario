@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -12,6 +13,7 @@ import { ListProductsQueryDto } from './dto/list-products-query.dto.js';
 import { ProductsService } from './products.service.js';
 import type { ProductDetailResponseDto } from './dto/product-detail-response.dto.js';
 import type { PaginatedProductsResponseDto } from './dto/paginated-products-response.dto.js';
+import { UpdateProductDto } from './dto/update-product.dto.js';
 
 @Controller('products')
 export class ProductsController {
@@ -36,5 +38,13 @@ export class ProductsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ProductDetailResponseDto> {
     return this.productsService.findOne(id);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateProductDto: UpdateProductDto,
+  ): Promise<ProductDetailResponseDto> {
+    return this.productsService.update(id, updateProductDto);
   }
 }

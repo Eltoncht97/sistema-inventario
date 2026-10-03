@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -14,6 +15,8 @@ import {
   toProductListItemResponse,
 } from './products.mapper.js';
 import { productDetailSelect, productListSelect } from './products.select.js';
+import { UpdateProductDto } from './dto/update-product.dto.js';
+import { ProductStatus } from '../generated/prisma/enums.js';
 
 @Injectable()
 export class ProductsService {
@@ -98,6 +101,70 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException('Producto no encontrado');
     }
+
+    return toProductDetailResponse(product);
+  }
+
+  async update(
+    id: string,
+    updateProductDto: UpdateProductDto,
+  ): Promise<ProductDetailResponseDto> {
+    const { name, description, price, currency, status } = updateProductDto;
+
+    if (
+      name === undefined &&
+      description === undefined &&
+      price === undefined &&
+      currency === undefined &&
+      status === undefined
+    ) {
+      throw new BadRequestException(
+        'Debe enviar al menos un campo para actualizar',
+      );
+    }
+
+    const product = await this.prisma.$transaction(async (transaction) => {
+      const existingProduct = await transaction.product.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          inventoryBalance: {
+            select: {
+              quantity: true,
+            },
+          },
+        },
+      });
+
+      if (!existingProduct) {
+        throw new NotFoundException('Producto no encontrado');
+      }
+
+      if (
+        status === ProductStatus.INACTIVE &&
+        existingProduct.status !== ProductStatus.INACTIVE &&
+        (existingProduct.inventoryBalance?.quantity ?? 0) > 0
+      ) {
+        throw new ConflictException(
+          'No se puede desactivar un producto con stock disponible',
+        );
+      }
+
+      const data: Prisma.ProductUpdateInput = {
+        ...(name !== undefined ? { name } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(price !== undefined ? { price } : {}),
+        ...(currency !== undefined ? { currency } : {}),
+        ...(status !== undefined ? { status } : {}),
+      };
+
+      return transaction.product.update({
+        where: { id },
+        data,
+        select: productDetailSelect,
+      });
+    });
 
     return toProductDetailResponse(product);
   }

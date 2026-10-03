@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Currency } from '../generated/prisma/enums.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
 import { ListProductsQueryDto } from './dto/list-products-query.dto.js';
+import { UpdateProductDto } from './dto/update-product.dto.js';
 import { ProductsController } from './products.controller.js';
 import { ProductsService } from './products.service.js';
 
@@ -10,11 +11,13 @@ describe('ProductsController', () => {
   let createProduct: ReturnType<typeof vi.fn>;
   let findAllProducts: ReturnType<typeof vi.fn>;
   let findOneProduct: ReturnType<typeof vi.fn>;
+  let updateProduct: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     createProduct = vi.fn();
     findAllProducts = vi.fn();
     findOneProduct = vi.fn();
+    updateProduct = vi.fn();
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ProductsController],
@@ -25,6 +28,7 @@ describe('ProductsController', () => {
             create: createProduct,
             findAll: findAllProducts,
             findOne: findOneProduct,
+            update: updateProduct,
           },
         },
       ],
@@ -83,5 +87,16 @@ describe('ProductsController', () => {
 
     await expect(controller.findOne(id)).resolves.toBe(product);
     expect(findOneProduct).toHaveBeenCalledWith(id);
+  });
+
+  it('delegates product updates to ProductsService and returns its result', async () => {
+    const id = 'd39a9913-0df9-486c-b025-0bc09e6cfc56';
+    const dto: UpdateProductDto = { name: 'Producto actualizado' };
+    const product = { id, name: dto.name, inventoryBalance: { quantity: 0 } };
+    updateProduct.mockResolvedValue(product);
+
+    await expect(controller.update(id, dto)).resolves.toBe(product);
+    expect(updateProduct).toHaveBeenCalledOnce();
+    expect(updateProduct).toHaveBeenCalledWith(id, dto);
   });
 });
