@@ -23,6 +23,7 @@ import {
 } from './products.select.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
 import { ProductStatus } from '../generated/prisma/enums.js';
+import { isSerializableTransactionConflict } from '../prisma/prisma-error.utils.js';
 
 const MAX_SERIALIZABLE_ATTEMPTS = 3;
 
@@ -198,10 +199,7 @@ export class ProductsService {
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
         );
       } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2034'
-        ) {
+        if (isSerializableTransactionConflict(error)) {
           if (attempt === MAX_SERIALIZABLE_ATTEMPTS) {
             throw new ServiceUnavailableException(
               'No se pudo actualizar el producto por concurrencia',

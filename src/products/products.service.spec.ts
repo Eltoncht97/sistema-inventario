@@ -409,11 +409,52 @@ describe('ProductsService', () => {
       expect(prismaTransaction).toHaveBeenCalledTimes(2);
     });
 
+    it('retries an adapter transaction write conflict and succeeds', async () => {
+      const conflict = {
+        name: 'DriverAdapterError',
+        cause: {
+          kind: 'TransactionWriteConflict',
+          originalCode: '40001',
+        },
+      };
+      prismaTransaction.mockRejectedValueOnce(conflict);
+      prismaFindUnique.mockResolvedValue(existingProduct);
+      prismaUpdate.mockResolvedValue({
+        ...detailRecord,
+        status: ProductStatus.INACTIVE,
+      });
+
+      await expect(
+        service.update(detailRecord.id, { status: ProductStatus.INACTIVE }),
+      ).resolves.toMatchObject({ status: ProductStatus.INACTIVE });
+      expect(prismaTransaction).toHaveBeenCalledTimes(2);
+    });
+
     it('returns 503 after three serializable conflicts', async () => {
       const conflict = new Prisma.PrismaClientKnownRequestError(
         'Transaction conflict',
         { code: 'P2034', clientVersion: '7.10.0' },
       );
+      prismaTransaction.mockRejectedValue(conflict);
+
+      await expect(
+        service.update(detailRecord.id, { status: ProductStatus.INACTIVE }),
+      ).rejects.toMatchObject({
+        constructor: ServiceUnavailableException,
+        message: 'No se pudo actualizar el producto por concurrencia',
+      });
+      expect(prismaTransaction).toHaveBeenCalledTimes(3);
+      expect(prismaUpdate).not.toHaveBeenCalled();
+    });
+
+    it('returns 503 after three adapter transaction write conflicts', async () => {
+      const conflict = {
+        name: 'DriverAdapterError',
+        cause: {
+          kind: 'TransactionWriteConflict',
+          originalCode: '40001',
+        },
+      };
       prismaTransaction.mockRejectedValue(conflict);
 
       await expect(

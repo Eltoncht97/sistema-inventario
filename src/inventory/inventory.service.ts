@@ -12,6 +12,7 @@ import {
   ProductStatus,
 } from '../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { isSerializableTransactionConflict } from '../prisma/prisma-error.utils.js';
 import type { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto.js';
 import type { InventoryBalanceResponseDto } from './dto/inventory-balance-response.dto.js';
 import type { InventoryMovementResponseDto } from './dto/inventory-movement-response.dto.js';
@@ -167,7 +168,7 @@ export class InventoryService {
           return toInventoryMovementResponse(existingMovement);
         }
 
-        if (this.isSerializableConflict(error)) {
+        if (isSerializableTransactionConflict(error)) {
           if (attempt === MAX_SERIALIZABLE_ATTEMPTS) {
             throw new ServiceUnavailableException(
               'No se pudo actualizar el inventario por concurrencia',
@@ -287,13 +288,6 @@ export class InventoryService {
         'La clave de idempotencia ya fue utilizada con otra operación',
       );
     }
-  }
-
-  private isSerializableConflict(error: unknown): boolean {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2034'
-    );
   }
 
   private isIdempotencyKeyConflict(error: unknown): boolean {

@@ -443,12 +443,60 @@ describe('InventoryService', () => {
     expect(prismaTransaction).toHaveBeenCalledTimes(2);
   });
 
+  it('retries an adapter transaction write conflict and succeeds', async () => {
+    const conflict = {
+      name: 'DriverAdapterError',
+      cause: {
+        kind: 'TransactionWriteConflict',
+        originalCode: '40001',
+      },
+    };
+    prismaTransaction
+      .mockRejectedValueOnce(conflict)
+      .mockImplementation(transactionImplementation);
+    productFindUnique.mockResolvedValue(activeProduct());
+    movementCreate.mockResolvedValue(movementRecord());
+
+    await expect(
+      service.createMovement(productId, {
+        type: InventoryMovementType.ENTRY,
+        quantity: 5,
+        reason: 'Compra',
+        idempotencyKey,
+      }),
+    ).resolves.toBeDefined();
+    expect(prismaTransaction).toHaveBeenCalledTimes(2);
+  });
+
   it('returns 503 after exhausting serializable retries', async () => {
     const error = new Prisma.PrismaClientKnownRequestError(
       'Transaction conflict',
       { code: 'P2034', clientVersion: '7.10.0' },
     );
     prismaTransaction.mockRejectedValue(error);
+
+    await expect(
+      service.createMovement(productId, {
+        type: InventoryMovementType.ENTRY,
+        quantity: 1,
+        idempotencyKey,
+      }),
+    ).rejects.toMatchObject({
+      constructor: ServiceUnavailableException,
+      message: 'No se pudo actualizar el inventario por concurrencia',
+    });
+    expect(prismaTransaction).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns 503 after exhausting adapter conflict retries', async () => {
+    const conflict = {
+      name: 'DriverAdapterError',
+      cause: {
+        kind: 'TransactionWriteConflict',
+        originalCode: '40001',
+      },
+    };
+    prismaTransaction.mockRejectedValue(conflict);
 
     await expect(
       service.createMovement(productId, {
