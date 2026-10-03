@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto.js';
@@ -141,10 +142,16 @@ export class ProductsService {
         throw new NotFoundException('Producto no encontrado');
       }
 
+      if (!existingProduct.inventoryBalance) {
+        throw new InternalServerErrorException(
+          'El producto no tiene un balance de inventario',
+        );
+      }
+
       if (
         status === ProductStatus.INACTIVE &&
         existingProduct.status !== ProductStatus.INACTIVE &&
-        (existingProduct.inventoryBalance?.quantity ?? 0) > 0
+        existingProduct.inventoryBalance.quantity > 0
       ) {
         throw new ConflictException(
           'No se puede desactivar un producto con stock disponible',

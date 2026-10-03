@@ -50,6 +50,24 @@ describe('UpdateProductDto', () => {
     });
   });
 
+  it.each(['name', 'price', 'currency', 'status'])(
+    'rejects null for %s',
+    async (field) => {
+      await expect(validate({ [field]: null })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    },
+  );
+
+  it('allows fields to be absent', async () => {
+    const result = await validate({ name: 'Producto actualizado' });
+
+    expect(result.price).toBeUndefined();
+    expect(result.currency).toBeUndefined();
+    expect(result.status).toBeUndefined();
+    expect(result.description).toBeUndefined();
+  });
+
   it.each(['', '   ', 123])('rejects the invalid name %j', async (name) => {
     await expect(validate({ name })).rejects.toBeInstanceOf(
       BadRequestException,

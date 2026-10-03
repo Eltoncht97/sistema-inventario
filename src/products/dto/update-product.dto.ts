@@ -3,10 +3,10 @@ import {
   IsDecimal,
   IsEnum,
   IsNotEmpty,
-  IsOptional,
   IsString,
   Length,
   Matches,
+  ValidateIf,
 } from 'class-validator';
 import { Currency, ProductStatus } from '../../generated/prisma/enums.js';
 import {
@@ -18,18 +18,18 @@ import {
 
 export class UpdateProductDto {
   @Transform(({ value }) => trimProductText(value))
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @IsNotEmpty()
   @Length(1, PRODUCT_NAME_MAX_LENGTH)
   name?: string;
 
   @Transform(({ value }) => trimProductText(value))
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsString()
   description?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @IsNotEmpty()
   @IsDecimal({ decimal_digits: '0,2', force_decimal: false })
@@ -38,11 +38,11 @@ export class UpdateProductDto {
   })
   price?: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(Currency)
   currency?: Currency;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(ProductStatus)
   status?: ProductStatus;
 }

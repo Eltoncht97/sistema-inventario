@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -306,6 +307,25 @@ describe('ProductsService', () => {
         message: 'Producto no encontrado',
       });
       expect(prismaUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects an update when the product has no inventory balance', async () => {
+      prismaFindUnique.mockResolvedValue({
+        id: detailRecord.id,
+        status: ProductStatus.ACTIVE,
+        inventoryBalance: null,
+      });
+
+      await expect(
+        service.update(detailRecord.id, { name: 'Producto actualizado' }),
+      ).rejects.toMatchObject({
+        constructor: InternalServerErrorException,
+        message: 'El producto no tiene un balance de inventario',
+      });
+      expect(prismaUpdate).not.toHaveBeenCalled();
+      await expect(prismaTransaction.mock.results[0]?.value).rejects.toThrow(
+        InternalServerErrorException,
+      );
     });
 
     it('rejects an empty update before starting a transaction', async () => {
