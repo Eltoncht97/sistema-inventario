@@ -49,7 +49,9 @@ describe('ProductsController', () => {
       price: dto.price,
       currency: dto.currency,
       status: 'ACTIVE',
-      inventoryBalance: { productId: 'product-id', quantity: 0 },
+      inventoryBalance: { quantity: 0 },
+      createdAt: '2026-10-03T20:00:00.000Z',
+      updatedAt: '2026-10-03T20:00:00.000Z',
     };
     createProduct.mockResolvedValue(createdProduct);
 

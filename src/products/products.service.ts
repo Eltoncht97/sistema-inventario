@@ -7,30 +7,23 @@ import { CreateProductDto } from './dto/create-product.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { ListProductsQueryDto } from './dto/list-products-query.dto.js';
-
-const productResponseSelect = {
-  id: true,
-  sku: true,
-  name: true,
-  price: true,
-  currency: true,
-  status: true,
-  inventoryBalance: {
-    select: {
-      id: true,
-      productId: true,
-      quantity: true,
-    },
-  },
-} satisfies Prisma.ProductSelect;
+import type { ProductDetailResponseDto } from './dto/product-detail-response.dto.js';
+import type { PaginatedProductsResponseDto } from './dto/paginated-products-response.dto.js';
+import {
+  toProductDetailResponse,
+  toProductListItemResponse,
+} from './products.mapper.js';
+import { productDetailSelect, productListSelect } from './products.select.js';
 
 @Injectable()
 export class ProductsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(createProductDto: CreateProductDto) {
+  async create(
+    createProductDto: CreateProductDto,
+  ): Promise<ProductDetailResponseDto> {
     try {
-      return await this.prisma.product.create({
+      const product = await this.prisma.product.create({
         data: {
           sku: createProductDto.sku,
           name: createProductDto.name,
@@ -41,10 +34,10 @@ export class ProductsService {
             create: {},
           },
         },
-        include: {
-          inventoryBalance: true,
-        },
+        select: productDetailSelect,
       });
+
+      return toProductDetailResponse(product);
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -57,7 +50,9 @@ export class ProductsService {
     }
   }
 
-  async findAll(query: ListProductsQueryDto) {
+  async findAll(
+    query: ListProductsQueryDto,
+  ): Promise<PaginatedProductsResponseDto> {
     const { page, limit, search, status, currency } = query;
     const where: Prisma.ProductWhereInput = {
       ...(search
@@ -78,13 +73,13 @@ export class ProductsService {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        select: productResponseSelect,
+        select: productListSelect,
       }),
       this.prisma.product.count({ where }),
     ]);
 
     return {
-      data,
+      data: data.map(toProductListItemResponse),
       meta: {
         page,
         limit,
@@ -94,16 +89,16 @@ export class ProductsService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<ProductDetailResponseDto> {
     const product = await this.prisma.product.findUnique({
       where: { id },
-      select: productResponseSelect,
+      select: productDetailSelect,
     });
 
     if (!product) {
       throw new NotFoundException('Producto no encontrado');
     }
 
-    return product;
+    return toProductDetailResponse(product);
   }
 }

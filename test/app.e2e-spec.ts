@@ -22,7 +22,7 @@ describe('Application (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    await app.init();
+    await app.listen(0);
     httpServer = app.getHttpServer() as App;
   });
 
@@ -34,26 +34,36 @@ describe('Application (e2e)', () => {
   });
 
   it('POST /products creates a product with an initial balance of zero', async () => {
-    const product = buildValidProduct();
+    const product = { ...buildValidProduct(), price: '4000' };
 
     const response = await request(httpServer)
       .post('/products')
       .send(product)
       .expect(201);
 
-    expect(response.body).toMatchObject({
+    expect(response.body).toEqual({
+      id: expect.any(String),
       sku: product.sku.toUpperCase(),
       name: product.name,
-      price: String(Number(product.price)),
+      description: null,
+      price: '4000.00',
       currency: product.currency,
       status: 'ACTIVE',
       inventoryBalance: {
         quantity: 0,
       },
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
     });
 
-    expect(response.body.id).toBeDefined();
-    expect(response.body.inventoryBalance.productId).toBe(response.body.id);
+    expect(new Date(response.body.createdAt).toISOString()).toBe(
+      response.body.createdAt,
+    );
+    expect(new Date(response.body.updatedAt).toISOString()).toBe(
+      response.body.updatedAt,
+    );
+    expect(response.body.inventoryBalance).not.toHaveProperty('id');
+    expect(response.body.inventoryBalance).not.toHaveProperty('productId');
   });
 
   it('POST /products rejects an unknown property', () => {
@@ -120,14 +130,15 @@ describe('Application (e2e)', () => {
       id: created.body.id,
       sku: product.sku.toUpperCase(),
       name: product.name,
-      price: String(Number(product.price)),
+      description: null,
+      price: '10.50',
       currency: product.currency,
       status: 'ACTIVE',
       inventoryBalance: {
-        id: expect.any(String),
-        productId: created.body.id,
         quantity: 0,
       },
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
     });
   });
 
@@ -162,15 +173,20 @@ describe('Application (e2e)', () => {
       id: created.body.id,
       sku: product.sku.toUpperCase(),
       name: product.name,
-      price: String(Number(product.price)),
+      price: '10.50',
       currency: product.currency,
       status: 'ACTIVE',
       inventoryBalance: {
-        id: expect.any(String),
-        productId: created.body.id,
         quantity: 0,
       },
     });
+    expect(response.body.data[0]).not.toHaveProperty('description');
+    expect(response.body.data[0]).not.toHaveProperty('createdAt');
+    expect(response.body.data[0]).not.toHaveProperty('updatedAt');
+    expect(response.body.data[0].inventoryBalance).not.toHaveProperty('id');
+    expect(response.body.data[0].inventoryBalance).not.toHaveProperty(
+      'productId',
+    );
     expect(response.body.meta).toEqual({
       page: 1,
       limit: 20,
